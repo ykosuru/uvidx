@@ -5,9 +5,10 @@ Example Usage of the Unified Indexer
 This script demonstrates:
 1. Loading the domain vocabulary
 2. Parsing different content types (code, documents, logs)
-3. Building a hybrid index
+3. Building a hybrid index with LOCAL embeddings (no external APIs!)
 4. Performing various search operations
 5. Cross-referencing between content types
+6. LLM integration for enhanced processing (optional)
 
 Run from the parent directory:
     python examples/usage_example.py
@@ -16,6 +17,7 @@ Run from the parent directory:
 import json
 import sys
 from pathlib import Path
+from typing import List
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -28,7 +30,16 @@ from unified_indexer import (
     LogParser,
     HybridIndex,
     SourceType,
-    IndexableChunk
+    IndexableChunk,
+    LLMInterface,
+    LLMEnhancedPipeline,
+    # Local embeddings - no external APIs needed!
+    create_embedder,
+    HybridEmbedder,
+    HashEmbedder,
+    TFIDFEmbedder,
+    DomainConceptEmbedder,
+    BM25Embedder
 )
 
 
@@ -386,6 +397,370 @@ def example_search_application():
 
 
 # ============================================================
+# Example 5: Local Embeddings (No External APIs!)
+# ============================================================
+
+def example_local_embeddings():
+    """Demonstrate local embeddings without any external API calls"""
+    print("\n" + "="*60)
+    print("EXAMPLE 5: Local Embeddings (No External APIs)")
+    print("="*60)
+    
+    # Sample vocabulary
+    vocabulary_data = [
+        {
+            "keywords": "wire transfer,electronic transfer",
+            "metadata": "payment-systems",
+            "description": "Electronic transfer of funds",
+            "related_keywords": "domestic wire,international wire",
+            "business_capability": ["Payment Processing", "Wire Transfer"]
+        },
+        {
+            "keywords": "OFAC,sanctions screening",
+            "metadata": "compliance-fraud",
+            "description": "OFAC sanctions screening",
+            "related_keywords": "sanctions check,blocked persons",
+            "business_capability": ["OFAC Screening", "Sanctions Compliance"]
+        },
+        {
+            "keywords": "MT-103,customer credit transfer",
+            "metadata": "swift-mt-messages",
+            "description": "SWIFT MT-103 message",
+            "related_keywords": "credit transfer,pacs.008",
+            "business_capability": ["MT-103 Processing", "Inbound SWIFT"]
+        }
+    ]
+    
+    print("\n--- Available Embedder Types ---")
+    print("""
+    1. 'hash'   - Feature hashing (default, no fitting needed)
+    2. 'hybrid' - Domain concepts + text features
+    3. 'tfidf'  - TF-IDF with domain boosting (requires fitting)
+    4. 'domain' - Pure domain concept matching
+    5. 'bm25'   - BM25 ranking (requires fitting)
+    """)
+    
+    # Example 1: Hash embedder (default, no fitting)
+    print("\n--- 1. Hash Embedder (Default) ---")
+    pipeline_hash = IndexingPipeline(
+        vocabulary_data=vocabulary_data,
+        embedder_type="hash"  # Default, works immediately
+    )
+    print(f"Embedder type: {pipeline_hash.embedder_type}")
+    print(f"Embedding dimension: {pipeline_hash.embedder.n_features}")
+    
+    # Test embedding
+    test_text = "Processing wire transfer with OFAC screening"
+    embedding = pipeline_hash.embedder.get_embedding(test_text)
+    print(f"Embedding sample (first 10 dims): {embedding[:10]}")
+    
+    # Example 2: Domain concept embedder
+    print("\n--- 2. Domain Concept Embedder ---")
+    vocab = DomainVocabulary()
+    vocab.load_from_data(vocabulary_data)
+    
+    domain_embedder = DomainConceptEmbedder(vocab)
+    print(f"Embedding dimension: {domain_embedder.n_dimensions} (one per concept)")
+    
+    embedding = domain_embedder.get_embedding(test_text)
+    explanation = domain_embedder.explain_embedding(test_text)
+    print(f"Activated concepts: {explanation}")
+    
+    # Example 3: Hybrid embedder
+    print("\n--- 3. Hybrid Embedder (Domain + Text) ---")
+    hybrid_embedder = HybridEmbedder(
+        vocab,
+        text_embedder="hash",
+        text_dim=256,
+        domain_weight=0.6,
+        text_weight=0.4
+    )
+    print(f"Total dimensions: {hybrid_embedder.n_dimensions}")
+    print(f"  Domain dimensions: {hybrid_embedder.domain_embedder.n_dimensions}")
+    print(f"  Text dimensions: 256")
+    
+    # Example 4: TF-IDF embedder (requires fitting)
+    print("\n--- 4. TF-IDF Embedder (Requires Fitting) ---")
+    
+    # Sample corpus to fit on
+    corpus = [
+        "Wire transfer processing with OFAC sanctions screening",
+        "MT-103 customer credit transfer message handling",
+        "Payment return and exception processing",
+        "Sanctions compliance and blocked persons list check",
+        "International wire transfer via SWIFT network"
+    ]
+    
+    tfidf_embedder = TFIDFEmbedder(domain_vocabulary=vocab)
+    tfidf_embedder.fit(corpus)
+    print(f"Vocabulary size: {len(tfidf_embedder.vocabulary)}")
+    
+    embedding = tfidf_embedder.get_embedding(test_text)
+    print(f"Non-zero features: {sum(1 for x in embedding if x > 0)}")
+    
+    # Example 5: Using pipeline with TF-IDF
+    print("\n--- 5. Pipeline with TF-IDF Embedder ---")
+    pipeline_tfidf = IndexingPipeline(
+        vocabulary_data=vocabulary_data,
+        embedder_type="tfidf"
+    )
+    
+    # Fit the embedder on some documents
+    pipeline_tfidf.fit_embedder(corpus)
+    print("TF-IDF embedder fitted on corpus")
+    
+    # Now index content
+    tal_code = """
+    INT PROC PROCESS^WIRE^TRANSFER(transfer_record);
+    BEGIN
+        IF NOT OFAC^CHECK(transfer_record) THEN
+            RETURN -1;
+        END;
+        CALL SEND^MT103(transfer_record);
+        RETURN 0;
+    END;
+    """
+    
+    chunks = pipeline_tfidf.index_content(
+        tal_code.encode('utf-8'),
+        'wire.tal',
+        SourceType.CODE
+    )
+    print(f"Indexed {len(chunks)} chunks with TF-IDF embeddings")
+    
+    # Search
+    results = pipeline_tfidf.search("OFAC sanctions", top_k=3)
+    print(f"Search results: {len(results)}")
+    for r in results:
+        print(f"  Score: {r.combined_score:.3f} - {r.matched_concepts}")
+    
+    # Example 6: Similarity computation
+    print("\n--- 6. Computing Similarity ---")
+    from unified_indexer import cosine_similarity, batch_cosine_similarity
+    import numpy as np
+    
+    query = "wire transfer OFAC"
+    doc1 = "Processing wire transfer with sanctions screening"
+    doc2 = "MT-103 message format specification"
+    doc3 = "OFAC blocked persons list update"
+    
+    query_emb = np.array(pipeline_hash.embedder.get_embedding(query))
+    doc_embs = np.array([
+        pipeline_hash.embedder.get_embedding(doc1),
+        pipeline_hash.embedder.get_embedding(doc2),
+        pipeline_hash.embedder.get_embedding(doc3)
+    ])
+    
+    similarities = batch_cosine_similarity(query_emb, doc_embs)
+    print(f"Query: '{query}'")
+    print(f"  Similarity to doc1 (wire/sanctions): {similarities[0]:.3f}")
+    print(f"  Similarity to doc2 (MT-103):         {similarities[1]:.3f}")
+    print(f"  Similarity to doc3 (OFAC):           {similarities[2]:.3f}")
+    
+    print("\n" + "-"*40)
+    print("Local Embeddings Summary")
+    print("-"*40)
+    print("""
+    Key advantages of local embeddings:
+    ✓ No external API calls
+    ✓ No API keys or costs
+    ✓ No network latency
+    ✓ Works offline
+    ✓ Domain-aware with vocabulary boosting
+    ✓ Interpretable (especially domain embedder)
+    
+    Recommended choices:
+    - Quick start: 'hash' (no fitting needed)
+    - Best accuracy: 'hybrid' or 'tfidf' (fit on your corpus)
+    - Interpretability: 'domain' (see which concepts matched)
+    """)
+
+
+# ============================================================
+# Example 6: LLM Integration
+# ============================================================
+
+def example_llm_integration():
+    """Demonstrate LLM integration for enhanced processing"""
+    print("\n" + "="*60)
+    print("EXAMPLE 6: LLM Integration (Optional)")
+    print("="*60)
+    
+    # Define your LLM implementation
+    class MyLLM(LLMInterface):
+        """
+        Example LLM implementation.
+        Replace the invoke_llm and generate_embedding methods
+        with your actual LLM provider calls.
+        """
+        
+        def __init__(self):
+            # Initialize your LLM client here
+            # self.client = YourLLMClient(api_key="...")
+            pass
+        
+        def invoke_llm(self,
+                       user_prompt: str,
+                       system_prompt: str = "",
+                       content_type: str = "text") -> str:
+            """
+            Implement with your LLM provider.
+            
+            Content types help you customize behavior:
+            - "text": General text processing
+            - "code": Code analysis/generation
+            - "embedding": Text for embedding
+            - "extraction": Information extraction
+            - "summarization": Content summarization
+            - "classification": Content classification
+            """
+            # Example implementation (replace with your LLM):
+            # 
+            # if content_type == "code":
+            #     # Use a model optimized for code
+            #     model = "claude-3-sonnet"
+            # else:
+            #     model = "claude-3-haiku"
+            # 
+            # response = self.client.messages.create(
+            #     model=model,
+            #     system=system_prompt,
+            #     messages=[{"role": "user", "content": user_prompt}]
+            # )
+            # return response.content[0].text
+            
+            # Stub response for demo
+            print(f"    [LLM] invoke_llm called with content_type='{content_type}'")
+            print(f"    [LLM] User prompt: {user_prompt[:100]}...")
+            return f"[Stub response for {content_type}]"
+        
+        def generate_embedding(self, text: str) -> List[float]:
+            """
+            Implement with your embedding provider.
+            """
+            # Example implementation:
+            # response = self.client.embeddings.create(
+            #     input=text[:8000],
+            #     model="text-embedding-3-small"
+            # )
+            # return response.data[0].embedding
+            
+            # Stub embedding for demo (normally 1536 dimensions for OpenAI)
+            import hashlib
+            # Generate deterministic pseudo-embedding from text hash
+            h = hashlib.md5(text.encode()).hexdigest()
+            return [float(int(h[i:i+2], 16)) / 255.0 for i in range(0, 32, 2)]
+    
+    # Sample vocabulary
+    vocabulary_data = [
+        {
+            "keywords": "wire transfer,electronic transfer",
+            "metadata": "payment-systems",
+            "description": "Electronic transfer of funds",
+            "related_keywords": "domestic wire,international wire",
+            "business_capability": ["Payment Processing", "Wire Transfer"]
+        },
+        {
+            "keywords": "OFAC,sanctions screening",
+            "metadata": "compliance-fraud",
+            "description": "OFAC sanctions screening",
+            "related_keywords": "sanctions check,blocked persons",
+            "business_capability": ["OFAC Screening", "Sanctions Compliance"]
+        }
+    ]
+    
+    # Create LLM instance
+    llm = MyLLM()
+    
+    # Create enhanced pipeline with LLM
+    pipeline = LLMEnhancedPipeline(
+        vocabulary_data=vocabulary_data,
+        llm_interface=llm
+    )
+    
+    print("\nCreated LLMEnhancedPipeline with custom LLM interface")
+    
+    # Sample code to analyze
+    tal_code = """
+    INT PROC PROCESS^WIRE^TRANSFER(transfer_record);
+        INT .transfer_record;
+    BEGIN
+        ! Perform OFAC sanctions screening
+        IF NOT OFAC^CHECK(transfer_record) THEN
+            CALL LOG^ERROR("Sanctions screening failed");
+            RETURN -1;
+        END;
+        
+        ! Process the wire transfer
+        CALL SEND^MT103(transfer_record);
+        RETURN 0;
+    END;
+    """
+    
+    # Index the code
+    chunks = pipeline.index_content(
+        tal_code.encode('utf-8'),
+        'wire_transfer.tal',
+        SourceType.CODE
+    )
+    print(f"\nIndexed {len(chunks)} code chunks")
+    
+    # Demonstrate LLM-enhanced features
+    print("\n--- Query Enhancement ---")
+    original_query = "wire transfer"
+    enhanced_query = pipeline.enhance_query(original_query)
+    print(f"Original: {original_query}")
+    print(f"Enhanced: {enhanced_query}")
+    
+    print("\n--- Code Explanation ---")
+    if chunks:
+        explanation = pipeline.explain_code(chunks[0])
+        print(f"Explanation: {explanation}")
+    
+    print("\n--- Business Rule Extraction ---")
+    if chunks:
+        rules = pipeline.extract_business_rules(chunks[0])
+        print(f"Rules: {rules}")
+    
+    print("\n--- Result Summarization ---")
+    results = pipeline.search("OFAC screening", top_k=3)
+    summary = pipeline.summarize_results("OFAC screening", results)
+    print(f"Summary: {summary}")
+    
+    print("\n" + "-"*40)
+    print("LLM Integration Template")
+    print("-"*40)
+    print("""
+To use with your LLM provider, implement LLMInterface:
+
+    from unified_indexer import LLMInterface, LLMEnhancedPipeline
+    
+    class MyLLM(LLMInterface):
+        def __init__(self, api_key):
+            self.client = YourLLMClient(api_key=api_key)
+        
+        def invoke_llm(self, user_prompt, system_prompt="", content_type="text"):
+            response = self.client.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+            return response.content
+        
+        def generate_embedding(self, text):
+            response = self.client.embed(text)
+            return response.embedding
+    
+    llm = MyLLM(api_key="your-api-key")
+    pipeline = LLMEnhancedPipeline(
+        vocabulary_path="vocab.json",
+        llm_interface=llm
+    )
+""")
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -400,6 +775,8 @@ def main():
     example_parser_usage()
     example_vocabulary_usage()
     example_search_application()
+    example_local_embeddings()  # New! Local embeddings demo
+    example_llm_integration()
     
     print("\n" + "="*60)
     print("All examples completed successfully!")
