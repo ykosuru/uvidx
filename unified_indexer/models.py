@@ -64,8 +64,32 @@ class VocabularyEntry:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'VocabularyEntry':
         """Create VocabularyEntry from vocabulary JSON entry"""
-        keywords = [k.strip() for k in data.get('keywords', '').split(',')]
-        related = [k.strip() for k in data.get('related_keywords', '').split(',')]
+        # Handle keywords - can be string (comma-separated) or list
+        keywords_raw = data.get('keywords', '')
+        if isinstance(keywords_raw, list):
+            keywords = [k.strip() for k in keywords_raw if k]
+        elif isinstance(keywords_raw, str):
+            keywords = [k.strip() for k in keywords_raw.split(',') if k.strip()]
+        else:
+            keywords = []
+        
+        # Handle related_keywords - can be string (comma-separated) or list
+        related_raw = data.get('related_keywords', '')
+        if isinstance(related_raw, list):
+            related = [k.strip() for k in related_raw if k]
+        elif isinstance(related_raw, str):
+            related = [k.strip() for k in related_raw.split(',') if k.strip()]
+        else:
+            related = []
+        
+        # Handle business_capability - can be string or list
+        capabilities_raw = data.get('business_capability', [])
+        if isinstance(capabilities_raw, str):
+            capabilities = [c.strip() for c in capabilities_raw.split(',') if c.strip()]
+        elif isinstance(capabilities_raw, list):
+            capabilities = capabilities_raw
+        else:
+            capabilities = []
         
         return cls(
             canonical_term=keywords[0] if keywords else '',
@@ -73,7 +97,7 @@ class VocabularyEntry:
             related_keywords=related,
             description=data.get('description', ''),
             metadata_category=data.get('metadata', ''),
-            business_capabilities=data.get('business_capability', [])
+            business_capabilities=capabilities
         )
     
     def all_terms(self) -> List[str]:

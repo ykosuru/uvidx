@@ -8,11 +8,64 @@ Usage:
 
 import sys
 import os
+import json
 
 # Add the current directory to path so we can import unified_indexer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Now import
+# Default keywords file location
+KEYWORDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keywords.json")
+
+# Fallback vocabulary if keywords.json not found
+FALLBACK_VOCABULARY = [
+    {
+        "keywords": "wire transfer,funds transfer,electronic transfer",
+        "metadata": "payment-systems",
+        "description": "Electronic transfer of funds between institutions",
+        "related_keywords": "domestic wire,international wire",
+        "business_capability": ["Payment Processing", "Wire Transfer"]
+    },
+    {
+        "keywords": "OFAC,sanctions screening,sanctions check",
+        "metadata": "compliance-fraud",
+        "description": "Office of Foreign Assets Control screening",
+        "related_keywords": "blocked persons,sdn list",
+        "business_capability": ["OFAC Screening", "Sanctions Compliance"]
+    },
+    {
+        "keywords": "MT-103,customer credit transfer",
+        "metadata": "swift-mt-messages",
+        "description": "SWIFT MT-103 message for customer transfers",
+        "related_keywords": "swift message,credit transfer",
+        "business_capability": ["MT-103 Processing", "SWIFT Messaging"]
+    },
+    {
+        "keywords": "payment return,return payment",
+        "metadata": "exception-handling",
+        "description": "Processing of returned payments",
+        "related_keywords": "refund,reversal",
+        "business_capability": ["Payment Return", "Exception Handling"]
+    }
+]
+
+
+def load_vocabulary():
+    """Load vocabulary from keywords.json or use fallback"""
+    if os.path.exists(KEYWORDS_FILE):
+        print(f"Loading vocabulary from: {KEYWORDS_FILE}")
+        with open(KEYWORDS_FILE, 'r') as f:
+            data = json.load(f)
+        
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict):
+            return data.get('entries', [data])
+    else:
+        print("keywords.json not found, using fallback vocabulary")
+        return FALLBACK_VOCABULARY
+
+
+# Now import unified_indexer
 from unified_indexer import (
     IndexingPipeline, 
     SourceType,
@@ -21,49 +74,22 @@ from unified_indexer import (
     DomainConceptEmbedder
 )
 
+
 def main():
     print("=" * 60)
     print("UNIFIED INDEXER - QUICK TEST")
     print("=" * 60)
     
-    # Sample vocabulary (inline, no file needed)
-    vocab_data = [
-        {
-            "keywords": "wire transfer,funds transfer,electronic transfer",
-            "metadata": "payment-systems",
-            "description": "Electronic transfer of funds between institutions",
-            "related_keywords": "domestic wire,international wire",
-            "business_capability": ["Payment Processing", "Wire Transfer"]
-        },
-        {
-            "keywords": "OFAC,sanctions screening,sanctions check",
-            "metadata": "compliance-fraud",
-            "description": "Office of Foreign Assets Control screening",
-            "related_keywords": "blocked persons,sdn list",
-            "business_capability": ["OFAC Screening", "Sanctions Compliance"]
-        },
-        {
-            "keywords": "MT-103,customer credit transfer",
-            "metadata": "swift-mt-messages",
-            "description": "SWIFT MT-103 message for customer transfers",
-            "related_keywords": "swift message,credit transfer",
-            "business_capability": ["MT-103 Processing", "SWIFT Messaging"]
-        },
-        {
-            "keywords": "payment return,return payment",
-            "metadata": "exception-handling",
-            "description": "Processing of returned payments",
-            "related_keywords": "refund,reversal",
-            "business_capability": ["Payment Return", "Exception Handling"]
-        }
-    ]
+    # Load vocabulary
+    vocab_data = load_vocabulary()
+    print(f"Vocabulary entries: {len(vocab_data)}")
     
     print("\n1. Creating pipeline with local embeddings...")
     pipeline = IndexingPipeline(
         vocabulary_data=vocab_data,
         embedder_type="hash"  # No fitting needed
     )
-    print(f"   ✓ Pipeline created with {len(vocab_data)} vocabulary entries")
+    print(f"   ✓ Pipeline created")
     print(f"   ✓ Embedder: {pipeline.embedder_type} ({pipeline.embedder.n_features} dimensions)")
     
     # Sample TAL code
@@ -208,15 +234,16 @@ the originating party.
     
     print("""
 Next steps:
-1. Replace vocab_data with your vocabulary JSON file:
-   pipeline = IndexingPipeline(vocabulary_path="your_vocab.json")
 
-2. Index your codebase:
-   pipeline.index_directory("./your_code", recursive=True)
+1. Build an index from your files:
+   python build_index.py --pdf-dir ./docs --tal-dir ./code --output ./my_index
 
-3. Save/load index:
-   pipeline.save("./my_index")
-   pipeline.load("./my_index")
+2. Search the index:
+   python search_index.py --index ./my_index --query "OFAC sanctions"
+   python search_index.py --index ./my_index --interactive
+
+3. Customize vocabulary:
+   Edit keywords.json to add/modify domain terms
 """)
 
 

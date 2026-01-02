@@ -140,9 +140,10 @@ class TFIDFEmbedder:
         if domain_vocabulary:
             for term in domain_vocabulary.term_to_entry.keys():
                 # Add both full term and individual words
-                self.domain_terms.add(term.lower())
-                for word in term.lower().split():
-                    self.domain_terms.add(word)
+                if isinstance(term, str):
+                    self.domain_terms.add(term.lower())
+                    for word in term.lower().split():
+                        self.domain_terms.add(word)
     
     def _preprocess(self, text: str) -> List[str]:
         """Preprocess text into tokens"""
@@ -301,9 +302,10 @@ class HashEmbedder:
         self.domain_terms: Set[str] = set()
         if domain_vocabulary:
             for term in domain_vocabulary.term_to_entry.keys():
-                self.domain_terms.add(term.lower())
-                for word in term.lower().split():
-                    self.domain_terms.add(word)
+                if isinstance(term, str):
+                    self.domain_terms.add(term.lower())
+                    for word in term.lower().split():
+                        self.domain_terms.add(word)
     
     def _hash_term(self, term: str) -> Tuple[int, int]:
         """
@@ -629,9 +631,10 @@ class BM25Embedder:
         self.domain_terms: Set[str] = set()
         if domain_vocabulary:
             for term in domain_vocabulary.term_to_entry.keys():
-                self.domain_terms.add(term.lower())
-                for word in term.lower().split():
-                    self.domain_terms.add(word)
+                if isinstance(term, str):
+                    self.domain_terms.add(term.lower())
+                    for word in term.lower().split():
+                        self.domain_terms.add(word)
     
     def _tokenize(self, text: str) -> List[str]:
         """Tokenize text"""
