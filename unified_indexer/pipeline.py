@@ -535,6 +535,14 @@ class IndexingPipeline:
         with open(path / 'vocabulary.json', 'w') as f:
             json.dump(self.vocabulary.to_dict(), f, indent=2)
         
+        # Get embedder dimensions if available
+        embedder_dims = None
+        if self.embedder:
+            if hasattr(self.embedder, 'n_features'):
+                embedder_dims = self.embedder.n_features
+            elif hasattr(self.embedder, 'output_dim'):
+                embedder_dims = self.embedder.output_dim
+        
         with open(path / 'pipeline_stats.json', 'w') as f:
             json.dump({
                 'files_processed': self.stats.files_processed,
@@ -542,6 +550,8 @@ class IndexingPipeline:
                 'total_chunks': self.stats.total_chunks,
                 'by_source_type': self.stats.by_source_type,
                 'processing_time_seconds': self.stats.processing_time_seconds,
+                'embedder_type': self.embedder_type,
+                'embedder_dims': embedder_dims,
                 'saved_at': datetime.now().isoformat()
             }, f, indent=2)
     
@@ -554,12 +564,30 @@ class IndexingPipeline:
         """
         self.index.load(directory)
         
+        path = Path(directory)
+        
         # Load vocabulary if saved
-        vocab_path = Path(directory) / 'vocabulary.json'
+        vocab_path = path / 'vocabulary.json'
         if vocab_path.exists():
             with open(vocab_path, 'r') as f:
                 vocab_data = json.load(f)
             self.vocabulary.load_from_data(vocab_data)
+        
+        # Load pipeline stats and restore embedder type
+        stats_path = path / 'pipeline_stats.json'
+        if stats_path.exists():
+            with open(stats_path, 'r') as f:
+                saved_stats = json.load(f)
+            
+            # Restore embedder type
+            saved_embedder_type = saved_stats.get('embedder_type')
+            if saved_embedder_type:
+                print(f"Restoring embedder type: {saved_embedder_type}")
+                self.set_embedder(saved_embedder_type)
+        
+        # Ensure embedding function is set if we have an embedder
+        if self.embedder and not self.index.embedding_fn:
+            self.index.set_embedding_function(self.embedder.get_embedding)
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive pipeline statistics"""

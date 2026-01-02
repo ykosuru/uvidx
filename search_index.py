@@ -325,7 +325,7 @@ Examples:
     print(f"Loading index from: {args.index}")
     pipeline = IndexingPipeline(
         vocabulary_data=vocab_data,
-        embedder_type="hash"
+        embedder_type=None  # Will be restored from saved index
     )
     pipeline.load(args.index)
     

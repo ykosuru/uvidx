@@ -335,12 +335,11 @@ class DomainVocabulary:
         """Export vocabulary as list of dicts"""
         return [
             {
-                'canonical_term': e.canonical_term,
-                'keywords': e.keywords,
-                'related_keywords': e.related_keywords,
+                'keywords': ','.join(e.keywords),  # from_dict expects comma-separated string
+                'related_keywords': ','.join(e.related_keywords),
                 'description': e.description,
-                'metadata_category': e.metadata_category,
-                'business_capabilities': e.business_capabilities
+                'metadata': e.metadata_category,  # from_dict expects 'metadata' not 'metadata_category'
+                'business_capability': e.business_capabilities
             }
             for e in self.entries
         ]
