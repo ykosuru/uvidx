@@ -20,6 +20,14 @@ from .parsers.tal_parser import TalCodeParser
 from .parsers.document_parser import DocumentParser
 from .parsers.log_parser import LogParser
 from .index import HybridIndex
+from .embeddings import (
+    create_embedder,
+    HybridEmbedder,
+    TFIDFEmbedder,
+    HashEmbedder,
+    DomainConceptEmbedder,
+    BM25Embedder
+)
 
 
 @dataclass
@@ -55,12 +63,20 @@ class IndexingPipeline:
     3. Parsing content into chunks
     4. Indexing chunks in hybrid store
     5. Providing search interface
+    
+    Supports local embeddings (no external APIs needed):
+    - HybridEmbedder: Domain concepts + text features
+    - TFIDFEmbedder: TF-IDF with domain boosting
+    - HashEmbedder: Feature hashing (no fitting needed)
+    - DomainConceptEmbedder: Pure domain concept matching
+    - BM25Embedder: BM25 ranking-based embeddings
     """
     
     def __init__(self, 
                  vocabulary_path: Optional[str] = None,
                  vocabulary_data: Optional[List[Dict]] = None,
                  embedding_fn: Optional[Callable[[str], List[float]]] = None,
+                 embedder_type: Optional[str] = "hash",
                  tal_parser_path: Optional[str] = None):
         """
         Initialize the indexing pipeline
@@ -68,7 +84,14 @@ class IndexingPipeline:
         Args:
             vocabulary_path: Path to vocabulary JSON file
             vocabulary_data: Vocabulary as list of dicts (alternative to path)
-            embedding_fn: Function to generate embeddings
+            embedding_fn: Custom function to generate embeddings (overrides embedder_type)
+            embedder_type: Type of local embedder to use:
+                - "hash": Feature hashing (default, no fitting needed)
+                - "hybrid": Domain + text hybrid
+                - "tfidf": TF-IDF (requires fitting)
+                - "domain": Pure domain concepts
+                - "bm25": BM25 ranking (requires fitting)
+                - None: No embeddings (concept-only search)
             tal_parser_path: Path to TAL parser modules
         """
         # Load vocabulary
@@ -82,11 +105,31 @@ class IndexingPipeline:
         self.parsers: Dict[SourceType, ContentParser] = {}
         self._init_parsers(tal_parser_path)
         
+        # Initialize local embedder if no custom function provided
+        self.embedder = None
+        self.embedder_type = embedder_type
+        
+        if embedding_fn:
+            # Use custom embedding function
+            embed_fn = embedding_fn
+        elif embedder_type:
+            # Create local embedder
+            self.embedder = create_embedder(
+                embedder_type=embedder_type,
+                domain_vocabulary=self.vocabulary
+            )
+            embed_fn = self.embedder.get_embedding
+        else:
+            embed_fn = None
+        
         # Initialize index
-        self.index = HybridIndex(self.vocabulary, embedding_fn)
+        self.index = HybridIndex(self.vocabulary, embed_fn)
         
         # Statistics
         self.stats = PipelineStatistics()
+        
+        # Track if embedder needs fitting
+        self._embedder_fitted = embedder_type in ["hash", "domain", None]
     
     def _init_parsers(self, tal_parser_path: Optional[str] = None):
         """Initialize all content parsers"""
@@ -96,6 +139,62 @@ class IndexingPipeline:
         )
         self.parsers[SourceType.DOCUMENT] = DocumentParser(self.vocabulary)
         self.parsers[SourceType.LOG] = LogParser(self.vocabulary)
+    
+    def set_embedding_function(self, fn: Callable[[str], List[float]]):
+        """Set the embedding function for vector search"""
+        self.index.set_embedding_function(fn)
+    
+    def set_embedder(self, 
+                     embedder_type: str,
+                     fit_documents: Optional[List[str]] = None,
+                     **kwargs):
+        """
+        Set a local embedder.
+        
+        Args:
+            embedder_type: Type of embedder ("hash", "hybrid", "tfidf", "domain", "bm25")
+            fit_documents: Documents to fit the embedder on (for tfidf/bm25)
+            **kwargs: Additional embedder arguments
+        """
+        self.embedder = create_embedder(
+            embedder_type=embedder_type,
+            domain_vocabulary=self.vocabulary,
+            **kwargs
+        )
+        self.embedder_type = embedder_type
+        
+        # Fit if needed
+        if fit_documents and hasattr(self.embedder, 'fit'):
+            self.embedder.fit(fit_documents)
+            self._embedder_fitted = True
+        else:
+            self._embedder_fitted = embedder_type in ["hash", "domain"]
+        
+        # Update index
+        self.index.set_embedding_function(self.embedder.get_embedding)
+    
+    def fit_embedder(self, documents: List[str]):
+        """
+        Fit the embedder on a corpus of documents.
+        
+        Required for TF-IDF and BM25 embedders before indexing.
+        
+        Args:
+            documents: List of document texts to fit on
+        """
+        if self.embedder and hasattr(self.embedder, 'fit'):
+            self.embedder.fit(documents)
+            self._embedder_fitted = True
+    
+    def fit_embedder_from_chunks(self, chunks: List[IndexableChunk]):
+        """
+        Fit the embedder using already parsed chunks.
+        
+        Args:
+            chunks: List of IndexableChunk objects
+        """
+        documents = [chunk.embedding_text or chunk.text for chunk in chunks]
+        self.fit_embedder(documents)
     
     def set_embedding_function(self, fn: Callable[[str], List[float]]):
         """Set the embedding function for vector search"""
@@ -509,70 +608,348 @@ class IndexingPipeline:
         print("\n" + "=" * 60)
 
 
-def create_pipeline_with_openai(vocabulary_path: str,
-                                 openai_api_key: Optional[str] = None,
-                                 model: str = "text-embedding-3-small") -> IndexingPipeline:
+# ============================================================
+# LLM Integration Stubs
+# ============================================================
+
+class LLMInterface:
     """
-    Create a pipeline with OpenAI embeddings
+    Stub interface for LLM invocation.
     
-    Args:
-        vocabulary_path: Path to vocabulary JSON
-        openai_api_key: OpenAI API key (or set OPENAI_API_KEY env var)
-        model: Embedding model to use
+    Users should subclass this and implement the invoke_llm method
+    with their preferred LLM provider (OpenAI, Anthropic, local models, etc.)
+    """
+    
+    def invoke_llm(self,
+                   user_prompt: str,
+                   system_prompt: str = "",
+                   content_type: str = "text") -> str:
+        """
+        Invoke an LLM with the given prompts.
         
-    Returns:
-        Configured IndexingPipeline
-    """
-    try:
-        import openai
-    except ImportError:
-        raise ImportError("Install openai package: pip install openai")
-    
-    api_key = openai_api_key or os.environ.get('OPENAI_API_KEY')
-    if not api_key:
-        raise ValueError("OpenAI API key required")
-    
-    client = openai.OpenAI(api_key=api_key)
-    
-    def embed_fn(text: str) -> List[float]:
-        response = client.embeddings.create(
-            input=text[:8000],  # Truncate to avoid token limits
-            model=model
+        Args:
+            user_prompt: The main prompt/question for the LLM
+            system_prompt: System-level instructions (optional)
+            content_type: Type of content being processed. One of:
+                - "text": General text processing
+                - "code": Code analysis/generation
+                - "embedding": Text for embedding generation
+                - "extraction": Information extraction
+                - "summarization": Content summarization
+                - "classification": Content classification
+                
+        Returns:
+            The LLM's response as a string
+            
+        Example implementation:
+            def invoke_llm(self, user_prompt, system_prompt="", content_type="text"):
+                # Your LLM API call here
+                response = your_llm_client.chat(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                return response.content
+        """
+        raise NotImplementedError(
+            "Subclass LLMInterface and implement invoke_llm() with your LLM provider. "
+            "See docstring for expected signature and example implementation."
         )
-        return response.data[0].embedding
     
-    pipeline = IndexingPipeline(vocabulary_path=vocabulary_path)
-    pipeline.set_embedding_function(embed_fn)
-    
-    return pipeline
-
-
-def create_pipeline_with_sentence_transformers(
-    vocabulary_path: str,
-    model_name: str = "all-MiniLM-L6-v2"
-) -> IndexingPipeline:
-    """
-    Create a pipeline with local sentence-transformer embeddings
-    
-    Args:
-        vocabulary_path: Path to vocabulary JSON
-        model_name: Sentence transformer model name
+    def generate_embedding(self, text: str) -> List[float]:
+        """
+        Generate an embedding vector for the given text.
         
-    Returns:
-        Configured IndexingPipeline
+        Args:
+            text: Text to embed
+            
+        Returns:
+            List of floats representing the embedding vector
+            
+        Example implementation:
+            def generate_embedding(self, text):
+                response = your_embedding_client.embed(text)
+                return response.embedding
+        """
+        raise NotImplementedError(
+            "Subclass LLMInterface and implement generate_embedding() with your embedding provider."
+        )
+
+
+class LLMEnhancedPipeline(IndexingPipeline):
     """
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        raise ImportError("Install sentence-transformers: pip install sentence-transformers")
+    Pipeline with LLM enhancement capabilities.
     
-    model = SentenceTransformer(model_name)
+    Extends the base IndexingPipeline with LLM-powered features:
+    - Semantic chunk enhancement
+    - Query understanding
+    - Result summarization
+    - Cross-reference explanation
     
-    def embed_fn(text: str) -> List[float]:
-        embedding = model.encode(text, convert_to_numpy=True)
-        return embedding.tolist()
+    Usage:
+        class MyLLM(LLMInterface):
+            def invoke_llm(self, user_prompt, system_prompt="", content_type="text"):
+                # Your implementation
+                pass
+            
+            def generate_embedding(self, text):
+                # Your implementation
+                pass
+        
+        llm = MyLLM()
+        pipeline = LLMEnhancedPipeline(
+            vocabulary_path="vocab.json",
+            llm_interface=llm
+        )
+    """
     
-    pipeline = IndexingPipeline(vocabulary_path=vocabulary_path)
-    pipeline.set_embedding_function(embed_fn)
+    def __init__(self,
+                 vocabulary_path: Optional[str] = None,
+                 vocabulary_data: Optional[List[Dict]] = None,
+                 llm_interface: Optional[LLMInterface] = None,
+                 tal_parser_path: Optional[str] = None):
+        """
+        Initialize the LLM-enhanced pipeline.
+        
+        Args:
+            vocabulary_path: Path to vocabulary JSON file
+            vocabulary_data: Vocabulary as list of dicts
+            llm_interface: LLMInterface implementation for LLM calls
+            tal_parser_path: Path to TAL parser modules
+        """
+        # Initialize with embedding function from LLM interface if provided
+        embedding_fn = None
+        if llm_interface:
+            try:
+                # Test if generate_embedding is implemented
+                llm_interface.generate_embedding("test")
+                embedding_fn = llm_interface.generate_embedding
+            except NotImplementedError:
+                pass
+        
+        super().__init__(
+            vocabulary_path=vocabulary_path,
+            vocabulary_data=vocabulary_data,
+            embedding_fn=embedding_fn,
+            tal_parser_path=tal_parser_path
+        )
+        
+        self.llm = llm_interface
     
-    return pipeline
+    def set_llm_interface(self, llm_interface: LLMInterface):
+        """Set or update the LLM interface"""
+        self.llm = llm_interface
+        
+        # Also set embedding function if available
+        try:
+            llm_interface.generate_embedding("test")
+            self.set_embedding_function(llm_interface.generate_embedding)
+        except NotImplementedError:
+            pass
+    
+    def enhance_query(self, query: str) -> str:
+        """
+        Use LLM to enhance/expand the search query.
+        
+        Args:
+            query: Original search query
+            
+        Returns:
+            Enhanced query with expanded terms
+        """
+        if not self.llm:
+            return query
+        
+        system_prompt = """You are a search query enhancer for a payment systems codebase.
+Given a user query, expand it with relevant technical terms, acronyms, and related concepts.
+Return only the enhanced query, no explanations."""
+        
+        user_prompt = f"Enhance this search query for a payment systems codebase: {query}"
+        
+        try:
+            enhanced = self.llm.invoke_llm(user_prompt, system_prompt, "text")
+            return enhanced.strip()
+        except NotImplementedError:
+            return query
+    
+    def summarize_results(self, 
+                          query: str, 
+                          results: List[SearchResult],
+                          max_results: int = 5) -> str:
+        """
+        Use LLM to summarize search results.
+        
+        Args:
+            query: The original search query
+            results: Search results to summarize
+            max_results: Maximum results to include in summary
+            
+        Returns:
+            Natural language summary of results
+        """
+        if not self.llm:
+            return f"Found {len(results)} results for '{query}'"
+        
+        # Build context from results
+        result_texts = []
+        for i, r in enumerate(results[:max_results], 1):
+            result_texts.append(
+                f"{i}. [{r.chunk.source_type.value}] {r.chunk.source_ref}\n"
+                f"   Concepts: {', '.join(r.matched_concepts)}\n"
+                f"   Content: {r.chunk.text[:200]}..."
+            )
+        
+        system_prompt = """You are a helpful assistant summarizing search results from a payment systems codebase.
+Provide a concise summary of what was found and how it relates to the query."""
+        
+        user_prompt = f"""Query: {query}
+
+Results:
+{chr(10).join(result_texts)}
+
+Summarize these results in 2-3 sentences."""
+        
+        try:
+            return self.llm.invoke_llm(user_prompt, system_prompt, "summarization")
+        except NotImplementedError:
+            return f"Found {len(results)} results for '{query}'"
+    
+    def explain_code(self, 
+                     chunk: IndexableChunk,
+                     context: str = "") -> str:
+        """
+        Use LLM to explain a code chunk.
+        
+        Args:
+            chunk: Code chunk to explain
+            context: Additional context
+            
+        Returns:
+            Natural language explanation
+        """
+        if not self.llm or chunk.source_type != SourceType.CODE:
+            return ""
+        
+        system_prompt = """You are an expert in legacy payment systems code (TAL, COBOL).
+Explain the given code clearly and concisely, focusing on its business purpose."""
+        
+        concepts = ", ".join(m.canonical_term for m in chunk.domain_matches)
+        user_prompt = f"""Explain this code:
+
+```
+{chunk.text}
+```
+
+Domain concepts found: {concepts}
+{f'Additional context: {context}' if context else ''}
+
+Provide a brief explanation of what this code does."""
+        
+        try:
+            return self.llm.invoke_llm(user_prompt, system_prompt, "code")
+        except NotImplementedError:
+            return ""
+    
+    def extract_business_rules(self, 
+                               chunk: IndexableChunk) -> List[str]:
+        """
+        Use LLM to extract business rules from code.
+        
+        Args:
+            chunk: Code chunk to analyze
+            
+        Returns:
+            List of extracted business rules
+        """
+        if not self.llm or chunk.source_type != SourceType.CODE:
+            return []
+        
+        system_prompt = """You are an expert in extracting business rules from payment systems code.
+Identify and list the business rules embedded in the code.
+Return one rule per line, no numbering or bullets."""
+        
+        user_prompt = f"""Extract business rules from this code:
+
+```
+{chunk.text}
+```
+
+List each business rule on a separate line."""
+        
+        try:
+            response = self.llm.invoke_llm(user_prompt, system_prompt, "extraction")
+            rules = [r.strip() for r in response.split('\n') if r.strip()]
+            return rules
+        except NotImplementedError:
+            return []
+
+
+# ============================================================
+# Example LLM Implementation Template
+# ============================================================
+
+class ExampleLLMImplementation(LLMInterface):
+    """
+    Example template for implementing LLMInterface.
+    
+    Copy and modify this for your specific LLM provider.
+    """
+    
+    def __init__(self, api_key: str = None, model: str = None):
+        """
+        Initialize your LLM client here.
+        
+        Example:
+            self.client = YourLLMClient(api_key=api_key)
+            self.model = model or "default-model"
+        """
+        self.api_key = api_key
+        self.model = model
+        # self.client = YourLLMClient(api_key=api_key)
+    
+    def invoke_llm(self,
+                   user_prompt: str,
+                   system_prompt: str = "",
+                   content_type: str = "text") -> str:
+        """
+        Implement your LLM invocation here.
+        
+        Example for OpenAI-style API:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+            return response.choices[0].message.content
+            
+        Example for Anthropic-style API:
+            response = self.client.messages.create(
+                model=self.model,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+            return response.content[0].text
+        """
+        # TODO: Implement with your LLM provider
+        raise NotImplementedError("Implement invoke_llm with your LLM provider")
+    
+    def generate_embedding(self, text: str) -> List[float]:
+        """
+        Implement your embedding generation here.
+        
+        Example for OpenAI:
+            response = self.client.embeddings.create(
+                input=text[:8000],
+                model="text-embedding-3-small"
+            )
+            return response.data[0].embedding
+            
+        Example for sentence-transformers:
+            embedding = self.model.encode(text, convert_to_numpy=True)
+            return embedding.tolist()
+        """
+        # TODO: Implement with your embedding provider
+        raise NotImplementedError("Implement generate_embedding with your embedding provider")
