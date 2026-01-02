@@ -1,0 +1,24 @@
+# Core dependencies
+numpy>=1.21.0
+
+# PDF parsing (choose one or more)
+pdfplumber>=0.7.0  # Best for tables
+# pymupdf>=1.21.0  # Fast alternative
+# pypdf>=3.0.0      # Basic fallback
+
+# Document parsing
+python-docx>=0.8.11
+beautifulsoup4>=4.11.0
+
+# Vector stores (optional - for production)
+# chromadb>=0.4.0
+# qdrant-client>=1.6.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Development
+black>=23.0.0
+isort>=5.12.0
+mypy>=1.0.0
