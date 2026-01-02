@@ -7,6 +7,11 @@ Usage:
     python search_index.py --index ./my_index --query "wire transfer" --top 10
     python search_index.py --index ./my_index --query "payment" --type code
     python search_index.py --index ./my_index --interactive
+    
+    # With LLM analysis
+    python search_index.py --index ./my_index --query "OFAC" --analyze
+    python search_index.py --index ./my_index --query "OFAC" --analyze --provider openai
+    python search_index.py --index ./my_index --query "OFAC" --analyze --min-score 0.60
 
 Arguments:
     --index       Directory containing the saved index
@@ -16,6 +21,10 @@ Arguments:
     --interactive Start interactive search mode
     --capability  Search by business capability instead of text
     --verbose     Show more details in results
+    --analyze     Send results to LLM for analysis
+    --provider    LLM provider: anthropic, openai, ollama, stub (default: anthropic)
+    --model       LLM model name (provider-specific)
+    --min-score   Minimum score for LLM analysis (default: 0.70)
 """
 
 import sys
@@ -29,7 +38,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from unified_indexer import IndexingPipeline, SourceType
 
-# Default keywords file location (same directory as this script)
+# Import LLM provider
+try:
+    from llm_provider import (
+        LLMProvider,
+        create_provider,
+        analyze_search_results,
+        format_search_results_for_llm,
+        WIRE_PAYMENTS_SYSTEM_PROMPT,
+        ContentType
+    )
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+
+# Default keywords file location
 DEFAULT_KEYWORDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keywords.json")
 
 
@@ -44,7 +67,6 @@ def load_vocabulary(vocab_path: str) -> list:
     with open(vocab_path, 'r') as f:
         data = json.load(f)
     
-    # Handle both formats: list or dict with 'entries' key
     if isinstance(data, list):
         return data
     elif isinstance(data, dict):
@@ -58,12 +80,10 @@ def print_result(result, index: int, verbose: bool = False):
     """Print a single search result"""
     chunk = result.chunk
     
-    # Header
     print(f"\n{'─' * 60}")
     print(f"Result #{index + 1}  |  Score: {result.combined_score:.3f}  |  Type: {chunk.source_type.value.upper()}")
     print(f"{'─' * 60}")
     
-    # Source info
     source_ref = chunk.source_ref
     if source_ref.file_path:
         print(f"📁 File: {source_ref.file_path}")
@@ -80,27 +100,22 @@ def print_result(result, index: int, verbose: bool = False):
     if source_ref.page_number:
         print(f"📄 Page: {source_ref.page_number}")
     
-    # Matched concepts
     if result.matched_concepts:
         concepts = result.matched_concepts[:5]
         print(f"🏷️  Concepts: {', '.join(concepts)}")
     
-    # Capabilities
     capabilities = list(chunk.capability_set)[:3]
     if capabilities:
         print(f"💼 Capabilities: {', '.join(capabilities)}")
     
-    # Content preview
     print(f"\n📝 Content:")
     text = chunk.text.strip()
     
-    # Truncate if too long
     max_len = 500 if verbose else 200
     if len(text) > max_len:
         text = text[:max_len] + "..."
     
-    # Indent the text
-    for line in text.split('\n')[:10]:  # Max 10 lines
+    for line in text.split('\n')[:10]:
         print(f"   {line}")
     
     if verbose and chunk.metadata:
@@ -123,6 +138,25 @@ def print_results(results, verbose: bool = False):
     print(f"\n{'═' * 60}")
 
 
+def print_llm_analysis(response, verbose: bool = False):
+    """Print LLM analysis response"""
+    print(f"\n{'═' * 60}")
+    print("🤖 LLM ANALYSIS")
+    print(f"{'═' * 60}")
+    
+    if not response.success:
+        print(f"\n❌ Error: {response.error}")
+        return
+    
+    print(f"\nProvider: {response.provider} | Model: {response.model}")
+    if response.tokens_used:
+        print(f"Tokens used: {response.tokens_used}")
+    
+    print(f"\n{'─' * 60}")
+    print(response.content)
+    print(f"{'─' * 60}")
+
+
 def search_once(pipeline: IndexingPipeline, 
                 query: str, 
                 top_k: int = 5,
@@ -130,7 +164,6 @@ def search_once(pipeline: IndexingPipeline,
                 verbose: bool = False):
     """Perform a single search"""
     
-    # Determine source type filter
     source_types = None
     if source_type == "code":
         source_types = [SourceType.CODE]
@@ -145,6 +178,64 @@ def search_once(pipeline: IndexingPipeline,
     
     results = pipeline.search(query, top_k=top_k, source_types=source_types)
     print_results(results, verbose)
+    
+    return results
+
+
+def search_and_analyze(pipeline: IndexingPipeline,
+                       query: str,
+                       provider: 'LLMProvider',
+                       top_k: int = 20,
+                       source_type: str = "all",
+                       min_score: float = 0.70,
+                       verbose: bool = False):
+    """Search and analyze with LLM"""
+    
+    source_types = None
+    if source_type == "code":
+        source_types = [SourceType.CODE]
+    elif source_type == "document":
+        source_types = [SourceType.DOCUMENT]
+    elif source_type == "log":
+        source_types = [SourceType.LOG]
+    
+    print(f"\n🔎 Searching for: \"{query}\"")
+    if source_types:
+        print(f"   Filtered to: {source_type}")
+    print(f"   Min score for analysis: {min_score}")
+    
+    # Get more results for analysis
+    results = pipeline.search(query, top_k=top_k, source_types=source_types)
+    
+    # Show results summary
+    high_score_count = len([r for r in results if r.combined_score >= min_score])
+    print(f"\n📊 Found {len(results)} results, {high_score_count} with score >= {min_score}")
+    
+    if verbose:
+        print_results(results, verbose)
+    else:
+        # Show brief summary
+        print("\nTop results:")
+        for i, r in enumerate(results[:5]):
+            chunk = r.chunk
+            source = chunk.source_ref.file_path or "unknown"
+            print(f"  {i+1}. [{r.combined_score:.3f}] {chunk.source_type.value}: {Path(source).name}")
+    
+    # Analyze with LLM
+    print(f"\n🤖 Sending to LLM for analysis...")
+    
+    response = analyze_search_results(
+        query=query,
+        results=results,
+        provider=provider,
+        min_score=min_score,
+        max_chunks=20,
+        verbose=verbose
+    )
+    
+    print_llm_analysis(response, verbose)
+    
+    return results, response
 
 
 def search_by_capability(pipeline: IndexingPipeline,
@@ -156,6 +247,8 @@ def search_by_capability(pipeline: IndexingPipeline,
     
     results = pipeline.get_by_capability(capability, top_k=top_k)
     print_results(results, verbose)
+    
+    return results
 
 
 def list_capabilities(pipeline: IndexingPipeline):
@@ -171,19 +264,26 @@ def list_capabilities(pipeline: IndexingPipeline):
         print("\n⚠️  No capabilities indexed yet.")
 
 
-def interactive_mode(pipeline: IndexingPipeline, verbose: bool = False):
+def interactive_mode(pipeline: IndexingPipeline, 
+                     provider: 'LLMProvider' = None,
+                     min_score: float = 0.70,
+                     verbose: bool = False):
     """Run interactive search mode"""
     print("\n" + "=" * 60)
     print("INTERACTIVE SEARCH MODE")
     print("=" * 60)
-    print("""
+    
+    llm_status = "✓ enabled" if provider else "✗ disabled"
+    print(f"""
 Commands:
   <query>           Search for text
+  :analyze <query>  Search and analyze with LLM ({llm_status})
   :cap <capability> Search by business capability
   :caps             List all capabilities
   :code <query>     Search only in code
   :doc <query>      Search only in documents
   :top <n>          Set number of results (default: 5)
+  :minscore <n>     Set min score for LLM (default: {min_score})
   :verbose          Toggle verbose output
   :stats            Show index statistics
   :help             Show this help
@@ -191,9 +291,9 @@ Commands:
 
 Examples:
   OFAC sanctions
+  :analyze wire transfer processing
   :cap Payment Processing
   :code wire transfer
-  :doc MT-103
 """)
     
     top_k = 5
@@ -208,20 +308,21 @@ Examples:
         if not query:
             continue
         
-        # Handle commands
         if query.lower() in [":quit", ":exit", ":q"]:
             print("Goodbye!")
             break
         
         elif query.lower() == ":help":
-            print("""
+            print(f"""
 Commands:
   <query>           Search for text
+  :analyze <query>  Search and analyze with LLM
   :cap <capability> Search by business capability
-  :caps             List all capabilities
+  :caps             List all capabilities  
   :code <query>     Search only in code
   :doc <query>      Search only in documents
   :top <n>          Set number of results
+  :minscore <n>     Set min score for LLM analysis (current: {min_score})
   :verbose          Toggle verbose output
   :stats            Show index statistics
   :quit             Exit
@@ -249,6 +350,21 @@ Commands:
                 print(f"Results per query set to: {top_k}")
             except ValueError:
                 print("Invalid number")
+        
+        elif query.lower().startswith(":minscore "):
+            try:
+                min_score = float(query[10:].strip())
+                print(f"Min score for LLM analysis set to: {min_score}")
+            except ValueError:
+                print("Invalid number")
+        
+        elif query.lower().startswith(":analyze "):
+            q = query[9:].strip()
+            if not provider:
+                print("❌ LLM analysis not available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY")
+            else:
+                search_and_analyze(pipeline, q, provider, top_k=20, 
+                                   min_score=min_score, verbose=verbose)
         
         elif query.lower().startswith(":cap "):
             capability = query[5:].strip()
@@ -279,7 +395,11 @@ Examples:
   python search_index.py --index ./my_index --query "wire transfer" --top 10
   python search_index.py --index ./my_index --query "payment" --type code
   python search_index.py --index ./my_index --interactive
-  python search_index.py --index ./my_index --capability "Payment Processing"
+  
+  # With LLM analysis
+  python search_index.py --index ./my_index --query "OFAC" --analyze
+  python search_index.py --index ./my_index --query "OFAC" --analyze --provider openai
+  python search_index.py --index ./my_index --query "wire transfer" --analyze --min-score 0.60
         """
     )
     
@@ -301,6 +421,17 @@ Examples:
     parser.add_argument("--vocab", type=str, default=DEFAULT_KEYWORDS_FILE,
                         help="Path to vocabulary JSON file (default: keywords.json)")
     
+    # LLM options
+    parser.add_argument("--analyze", "-a", action="store_true",
+                        help="Send results to LLM for analysis")
+    parser.add_argument("--provider", "-p", type=str, default="anthropic",
+                        choices=["anthropic", "openai", "ollama", "stub"],
+                        help="LLM provider (default: anthropic)")
+    parser.add_argument("--model", "-m", type=str, default=None,
+                        help="LLM model name (provider-specific)")
+    parser.add_argument("--min-score", type=float, default=0.70,
+                        help="Minimum score for LLM analysis (default: 0.70)")
+    
     args = parser.parse_args()
     
     # Validate
@@ -316,7 +447,7 @@ Examples:
     print("UNIFIED INDEXER - SEARCH")
     print("=" * 60)
     
-    # Load vocabulary from keywords.json
+    # Load vocabulary
     print(f"\nLoading vocabulary from: {args.vocab}")
     vocab_data = load_vocabulary(args.vocab)
     print(f"Vocabulary entries: {len(vocab_data)}")
@@ -329,14 +460,39 @@ Examples:
     )
     pipeline.load(args.index)
     
-    # Get stats
     stats = pipeline.get_statistics()
     total_chunks = stats['pipeline']['total_chunks']
     print(f"Index loaded: {total_chunks} chunks")
     
+    # Setup LLM provider if needed
+    llm_provider = None
+    if args.analyze or args.interactive:
+        if LLM_AVAILABLE:
+            try:
+                llm_provider = create_provider(args.provider, args.model)
+                print(f"LLM Provider: {args.provider} ({llm_provider.model})")
+            except Exception as e:
+                print(f"⚠️  LLM setup failed: {e}")
+                if args.analyze:
+                    print("   Continuing without LLM analysis...")
+        else:
+            print("⚠️  LLM provider module not available")
+    
     # Run search
     if args.interactive:
-        interactive_mode(pipeline, args.verbose)
+        interactive_mode(pipeline, llm_provider, args.min_score, args.verbose)
+    elif args.analyze and args.query:
+        if llm_provider:
+            search_and_analyze(
+                pipeline, args.query, llm_provider,
+                top_k=20,
+                source_type=args.type,
+                min_score=args.min_score,
+                verbose=args.verbose
+            )
+        else:
+            print("❌ LLM analysis requires a valid provider. Check API keys.")
+            search_once(pipeline, args.query, args.top, args.type, args.verbose)
     elif args.capability:
         search_by_capability(pipeline, args.capability, args.top, args.verbose)
     else:
