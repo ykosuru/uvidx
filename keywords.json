@@ -1,0 +1,349 @@
+{
+  "version": "1.0",
+  "description": "Payment Systems Domain Vocabulary",
+  "entries": [
+    {
+      "keywords": "wire transfer,funds transfer,electronic transfer",
+      "metadata": "payment-systems",
+      "description": "Electronic transfer of funds between financial institutions",
+      "related_keywords": "domestic wire,international wire,high-value payment",
+      "business_capability": ["Payment Processing", "Wire Transfer"]
+    },
+    {
+      "keywords": "OFAC,sanctions screening,sanctions check",
+      "metadata": "compliance-fraud",
+      "description": "Office of Foreign Assets Control screening",
+      "related_keywords": "blocked persons,sdn list,prohibited parties",
+      "business_capability": ["OFAC Screening", "Sanctions Compliance"]
+    },
+    {
+      "keywords": "MT-103,customer credit transfer",
+      "metadata": "swift-mt-messages",
+      "description": "SWIFT MT-103 single customer credit transfer",
+      "related_keywords": "swift message,credit transfer,customer wire",
+      "business_capability": ["MT-103 Processing", "SWIFT Messaging", "Inbound SWIFT", "Outbound SWIFT"]
+    },
+    {
+      "keywords": "MT-202,bank transfer,financial institution transfer",
+      "metadata": "swift-mt-messages",
+      "description": "SWIFT MT-202 bank-to-bank transfer",
+      "related_keywords": "cover payment,interbank transfer",
+      "business_capability": ["MT-202 Processing", "Cover Payments"]
+    },
+    {
+      "keywords": "MT-199,free format message",
+      "metadata": "swift-mt-messages",
+      "description": "SWIFT MT-199 free format message",
+      "related_keywords": "inquiry,investigation",
+      "business_capability": ["MT-199 Processing", "Payment Investigation"]
+    },
+    {
+      "keywords": "MT-940,customer statement",
+      "metadata": "swift-mt-messages",
+      "description": "SWIFT MT-940 customer statement message",
+      "related_keywords": "account statement,balance report",
+      "business_capability": ["Statement Processing", "Balance Reporting"]
+    },
+    {
+      "keywords": "MT-950,statement message",
+      "metadata": "swift-mt-messages",
+      "description": "SWIFT MT-950 statement message",
+      "related_keywords": "netting statement",
+      "business_capability": ["Statement Processing"]
+    },
+    {
+      "keywords": "pacs.008,customer credit transfer ISO",
+      "metadata": "iso20022-pacs-messages",
+      "description": "ISO 20022 pacs.008 Customer Credit Transfer",
+      "related_keywords": "iso message,pain.001",
+      "business_capability": ["Customer Credit Transfer", "ISO 20022"]
+    },
+    {
+      "keywords": "pacs.009,financial institution credit transfer",
+      "metadata": "iso20022-pacs-messages",
+      "description": "ISO 20022 pacs.009 Financial Institution Credit Transfer",
+      "related_keywords": "cover payment,fi transfer",
+      "business_capability": ["FI Credit Transfer", "ISO 20022"]
+    },
+    {
+      "keywords": "pacs.004,payment return",
+      "metadata": "iso20022-pacs-messages",
+      "description": "ISO 20022 pacs.004 Payment Return",
+      "related_keywords": "return message,reject",
+      "business_capability": ["Payment Return", "ISO 20022"]
+    },
+    {
+      "keywords": "pain.001,customer credit transfer initiation",
+      "metadata": "iso20022-pain-messages",
+      "description": "ISO 20022 pain.001 Customer Credit Transfer Initiation",
+      "related_keywords": "payment initiation,batch payment",
+      "business_capability": ["Payment Initiation", "ISO 20022"]
+    },
+    {
+      "keywords": "camt.053,bank to customer statement",
+      "metadata": "iso20022-camt-messages",
+      "description": "ISO 20022 camt.053 Bank To Customer Statement",
+      "related_keywords": "account statement,transaction report",
+      "business_capability": ["Statement Processing", "ISO 20022"]
+    },
+    {
+      "keywords": "payment return,return payment,payment reversal",
+      "metadata": "exception-handling",
+      "description": "Processing of returned payments",
+      "related_keywords": "refund,reversal,reject",
+      "business_capability": ["Payment Return", "Exception Handling"]
+    },
+    {
+      "keywords": "AML,anti money laundering,money laundering",
+      "metadata": "compliance-fraud",
+      "description": "Anti-money laundering compliance",
+      "related_keywords": "suspicious activity,sar,ctr",
+      "business_capability": ["AML Compliance", "Transaction Monitoring"]
+    },
+    {
+      "keywords": "KYC,know your customer,customer identification",
+      "metadata": "compliance-fraud",
+      "description": "Know Your Customer verification",
+      "related_keywords": "customer due diligence,cdd,identity verification",
+      "business_capability": ["KYC", "Customer Onboarding"]
+    },
+    {
+      "keywords": "BSA,bank secrecy act",
+      "metadata": "compliance-fraud",
+      "description": "Bank Secrecy Act compliance",
+      "related_keywords": "ctr,sar,fincen",
+      "business_capability": ["BSA Compliance", "Regulatory Reporting"]
+    },
+    {
+      "keywords": "Dodd Frank,dodd-frank",
+      "metadata": "compliance-fraud",
+      "description": "Dodd-Frank Act compliance",
+      "related_keywords": "financial reform,regulatory compliance",
+      "business_capability": ["Dodd Frank", "Regulatory Compliance"]
+    },
+    {
+      "keywords": "Fedwire,federal reserve wire",
+      "metadata": "payment-networks",
+      "description": "Federal Reserve Wire Network",
+      "related_keywords": "fed wire,rtgs,real time gross settlement",
+      "business_capability": ["Fedwire Processing", "Domestic Wires"]
+    },
+    {
+      "keywords": "CHIPS,clearing house interbank",
+      "metadata": "payment-networks",
+      "description": "Clearing House Interbank Payments System",
+      "related_keywords": "chips payment,clearing house",
+      "business_capability": ["CHIPS Processing", "Interbank Settlement"]
+    },
+    {
+      "keywords": "ACH,automated clearing house",
+      "metadata": "payment-networks",
+      "description": "Automated Clearing House network",
+      "related_keywords": "ach transfer,nacha,batch payment",
+      "business_capability": ["ACH Processing", "Batch Payments"]
+    },
+    {
+      "keywords": "SWIFT,society worldwide interbank",
+      "metadata": "payment-networks",
+      "description": "SWIFT messaging network",
+      "related_keywords": "swift network,bic,swift code",
+      "business_capability": ["SWIFT Messaging", "International Payments"]
+    },
+    {
+      "keywords": "SEPA,single euro payments",
+      "metadata": "payment-networks",
+      "description": "Single Euro Payments Area",
+      "related_keywords": "euro transfer,european payments",
+      "business_capability": ["SEPA Processing", "European Payments"]
+    },
+    {
+      "keywords": "beneficiary,receiver,payee",
+      "metadata": "payment-parties",
+      "description": "Payment beneficiary/receiver",
+      "related_keywords": "credit party,recipient",
+      "business_capability": ["Beneficiary Management"]
+    },
+    {
+      "keywords": "originator,sender,payer",
+      "metadata": "payment-parties",
+      "description": "Payment originator/sender",
+      "related_keywords": "debit party,ordering customer",
+      "business_capability": ["Originator Management"]
+    },
+    {
+      "keywords": "correspondent bank,intermediary bank",
+      "metadata": "payment-parties",
+      "description": "Correspondent/intermediary banking",
+      "related_keywords": "nostro,vostro,agent bank",
+      "business_capability": ["Correspondent Banking"]
+    },
+    {
+      "keywords": "ordering institution,ordering bank",
+      "metadata": "payment-parties",
+      "description": "Ordering financial institution",
+      "related_keywords": "sending bank,originating bank",
+      "business_capability": ["Ordering Institution"]
+    },
+    {
+      "keywords": "beneficiary institution,beneficiary bank",
+      "metadata": "payment-parties",
+      "description": "Beneficiary financial institution",
+      "related_keywords": "receiving bank,account with institution",
+      "business_capability": ["Beneficiary Institution"]
+    },
+    {
+      "keywords": "validation,verification,edit check",
+      "metadata": "processing",
+      "description": "Payment validation and verification",
+      "related_keywords": "format check,field validation",
+      "business_capability": ["Payment Validation", "Message Validation"]
+    },
+    {
+      "keywords": "routing,payment routing,message routing",
+      "metadata": "processing",
+      "description": "Payment routing logic",
+      "related_keywords": "route selection,channel selection",
+      "business_capability": ["Payment Routing"]
+    },
+    {
+      "keywords": "queue,payment queue,pending",
+      "metadata": "processing",
+      "description": "Payment queue management",
+      "related_keywords": "held payment,pending review",
+      "business_capability": ["Queue Management"]
+    },
+    {
+      "keywords": "repair,payment repair,exception repair",
+      "metadata": "exception-handling",
+      "description": "Payment repair processing",
+      "related_keywords": "manual repair,data correction",
+      "business_capability": ["Payment Repair", "Exception Handling"]
+    },
+    {
+      "keywords": "cutoff,processing cutoff,deadline",
+      "metadata": "processing",
+      "description": "Processing cutoff times",
+      "related_keywords": "end of day,settlement window",
+      "business_capability": ["Cutoff Management"]
+    },
+    {
+      "keywords": "settlement,payment settlement,final settlement",
+      "metadata": "processing",
+      "description": "Payment settlement processing",
+      "related_keywords": "clearing,netting,finality",
+      "business_capability": ["Settlement Processing"]
+    },
+    {
+      "keywords": "reconciliation,account reconciliation",
+      "metadata": "processing",
+      "description": "Payment reconciliation",
+      "related_keywords": "matching,break resolution",
+      "business_capability": ["Reconciliation"]
+    },
+    {
+      "keywords": "statement,account statement,balance",
+      "metadata": "reporting",
+      "description": "Account statements and balances",
+      "related_keywords": "mt940,mt950,balance report",
+      "business_capability": ["Statement Processing", "Balance Reporting"]
+    },
+    {
+      "keywords": "nostro,nostro account",
+      "metadata": "accounting",
+      "description": "Nostro account (our account at another bank)",
+      "related_keywords": "correspondent account,due from",
+      "business_capability": ["Nostro Management", "Account Management"]
+    },
+    {
+      "keywords": "vostro,vostro account",
+      "metadata": "accounting",
+      "description": "Vostro account (their account at our bank)",
+      "related_keywords": "loro account,due to",
+      "business_capability": ["Vostro Management", "Account Management"]
+    },
+    {
+      "keywords": "IMAD,input message accountability data",
+      "metadata": "reference-numbers",
+      "description": "Fedwire Input Message Accountability Data",
+      "related_keywords": "fedwire reference,input reference",
+      "business_capability": ["Fedwire Processing", "Message Tracking"]
+    },
+    {
+      "keywords": "OMAD,output message accountability data",
+      "metadata": "reference-numbers",
+      "description": "Fedwire Output Message Accountability Data",
+      "related_keywords": "fedwire reference,output reference",
+      "business_capability": ["Fedwire Processing", "Message Tracking"]
+    },
+    {
+      "keywords": "UETR,unique end-to-end transaction reference",
+      "metadata": "reference-numbers",
+      "description": "SWIFT gpi Unique End-to-End Transaction Reference",
+      "related_keywords": "gpi reference,tracking reference",
+      "business_capability": ["SWIFT gpi", "Payment Tracking"]
+    },
+    {
+      "keywords": "BIC,bank identifier code",
+      "metadata": "identifiers",
+      "description": "Bank Identifier Code (SWIFT code)",
+      "related_keywords": "swift code,bank code",
+      "business_capability": ["Bank Identification"]
+    },
+    {
+      "keywords": "IBAN,international bank account",
+      "metadata": "identifiers",
+      "description": "International Bank Account Number",
+      "related_keywords": "account number,international account",
+      "business_capability": ["Account Identification"]
+    },
+    {
+      "keywords": "ABA,routing number",
+      "metadata": "identifiers",
+      "description": "ABA Routing Transit Number",
+      "related_keywords": "routing number,rtn,aba number",
+      "business_capability": ["Bank Identification", "Domestic Routing"]
+    },
+    {
+      "keywords": "LEI,legal entity identifier",
+      "metadata": "identifiers",
+      "description": "Legal Entity Identifier",
+      "related_keywords": "entity identifier,lei code",
+      "business_capability": ["Entity Identification", "Regulatory Reporting"]
+    },
+    {
+      "keywords": "STP,straight through processing",
+      "metadata": "processing",
+      "description": "Straight-through processing without manual intervention",
+      "related_keywords": "auto processing,no touch",
+      "business_capability": ["STP Processing", "Automation"]
+    },
+    {
+      "keywords": "exception,payment exception,processing exception",
+      "metadata": "exception-handling",
+      "description": "Payment processing exceptions",
+      "related_keywords": "error,reject,hold",
+      "business_capability": ["Exception Handling"]
+    },
+    {
+      "keywords": "investigation,payment investigation,inquiry",
+      "metadata": "exception-handling",
+      "description": "Payment investigation and inquiry",
+      "related_keywords": "trace,claim,dispute",
+      "business_capability": ["Payment Investigation"]
+    },
+    {
+      "keywords": "liquidity,liquidity management,cash position",
+      "metadata": "treasury",
+      "description": "Liquidity and cash management",
+      "related_keywords": "cash flow,funding,position management",
+      "business_capability": ["Liquidity Management", "Treasury"]
+    },
+    {
+      "keywords": "FX,foreign exchange,currency exchange",
+      "metadata": "treasury",
+      "description": "Foreign exchange processing",
+      "related_keywords": "forex,currency conversion,exchange rate",
+      "business_capability": ["FX Processing", "Currency Management"]
+    }
+  ]
+}
