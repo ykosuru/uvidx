@@ -175,8 +175,17 @@ Examples:
                         help="Search directories recursively (default: True)")
     parser.add_argument("--no-recursive", action="store_true", help="Don't search recursively")
     parser.add_argument("--embedder", "-e", type=str, default="hash",
-                        choices=["hash", "hybrid", "tfidf", "domain", "bm25"],
+                        choices=["hash", "hybrid", "tfidf", "domain", "bm25", 
+                                 "payment", "payment_hybrid", "learned", "learned_hybrid"],
                         help="Embedder type (default: hash)")
+    parser.add_argument("--dims", "-d", type=int, default=None,
+                        help="Embedding dimensions (default: 1024 for hash, 512+vocab for hybrid)")
+    parser.add_argument("--domain-weight", type=float, default=0.6,
+                        help="Weight for domain concepts in hybrid embedder (default: 0.6)")
+    parser.add_argument("--dimensions", type=str, default=None,
+                        help="Path to learned dimensions JSON file (for learned/learned_hybrid embedders)")
+    parser.add_argument("--learn-dims", action="store_true",
+                        help="Learn dimensions from corpus before indexing (creates dimensions.json)")
     
     args = parser.parse_args()
     
@@ -196,12 +205,120 @@ Examples:
     vocab_data = load_vocabulary(args.vocab)
     print(f"Vocabulary entries: {len(vocab_data)}")
     
+    # Build embedder kwargs
+    embedder_kwargs = {}
+    if args.dims:
+        if args.embedder == "hash":
+            embedder_kwargs['n_features'] = args.dims
+        elif args.embedder in ["hybrid", "payment_hybrid"]:
+            embedder_kwargs['text_dim'] = args.dims
+        elif args.embedder in ["tfidf", "bm25"]:
+            embedder_kwargs['max_features'] = args.dims
+    
+    if args.embedder == "hybrid":
+        embedder_kwargs['domain_weight'] = args.domain_weight
+        embedder_kwargs['text_weight'] = 1.0 - args.domain_weight
+    elif args.embedder == "payment_hybrid":
+        embedder_kwargs['payment_weight'] = args.domain_weight
+        embedder_kwargs['text_weight'] = 1.0 - args.domain_weight
+    elif args.embedder in ["learned", "learned_hybrid"]:
+        embedder_kwargs['learned_weight'] = args.domain_weight
+        embedder_kwargs['text_weight'] = 1.0 - args.domain_weight
+    
+    # Handle learned dimensions
+    dimensions_path = args.dimensions
+    if args.learn_dims:
+        # Learn dimensions from corpus first
+        print("\n" + "=" * 60)
+        print("LEARNING DIMENSIONS FROM CORPUS")
+        print("=" * 60)
+        
+        from unified_indexer.learned_embeddings import LearnedDomainEmbedder, LearningConfig
+        
+        # Collect all documents
+        all_docs = []
+        
+        if args.pdf_dir and os.path.isdir(args.pdf_dir):
+            print(f"\nReading documents from: {args.pdf_dir}")
+            for root, dirs, files in os.walk(args.pdf_dir):
+                for f in files:
+                    if f.lower().endswith(('.txt', '.md')):
+                        try:
+                            path = os.path.join(root, f)
+                            with open(path, 'r', encoding='utf-8', errors='replace') as fp:
+                                content = fp.read()
+                                if content.strip():
+                                    all_docs.append(content)
+                        except Exception as e:
+                            pass
+        
+        if args.tal_dir and os.path.isdir(args.tal_dir):
+            print(f"Reading code from: {args.tal_dir}")
+            for root, dirs, files in os.walk(args.tal_dir):
+                for f in files:
+                    if f.lower().endswith(('.tal', '.txt', '.cbl', '.cob')):
+                        try:
+                            path = os.path.join(root, f)
+                            with open(path, 'r', encoding='utf-8', errors='replace') as fp:
+                                content = fp.read()
+                                if content.strip():
+                                    all_docs.append(content)
+                        except Exception as e:
+                            pass
+        
+        if len(all_docs) < 3:
+            print("Error: Need at least 3 documents to learn dimensions")
+            sys.exit(1)
+        
+        print(f"Found {len(all_docs)} documents")
+        
+        # Configure and learn
+        n_dims = args.dims if args.dims else 80
+        config = LearningConfig(
+            n_dimensions=n_dims,
+            min_term_frequency=2 if len(all_docs) < 20 else 3
+        )
+        
+        learned_embedder = LearnedDomainEmbedder(config)
+        learned_embedder.fit(all_docs, verbose=True)
+        
+        # Save dimensions
+        dimensions_path = os.path.join(args.output, 'dimensions.json')
+        os.makedirs(args.output, exist_ok=True)
+        learned_embedder.save(dimensions_path)
+        
+        # Update embedder type to use learned
+        if args.embedder not in ["learned", "learned_hybrid"]:
+            args.embedder = "learned"
+        
+        embedder_kwargs['dimensions_path'] = dimensions_path
+        print(f"\nDimensions saved to: {dimensions_path}")
+    
+    elif args.embedder in ["learned", "learned_hybrid"]:
+        if not dimensions_path:
+            print("Error: --dimensions required for learned embedder (or use --learn-dims)")
+            sys.exit(1)
+        if not os.path.exists(dimensions_path):
+            print(f"Error: Dimensions file not found: {dimensions_path}")
+            sys.exit(1)
+        embedder_kwargs['dimensions_path'] = dimensions_path
+    
     # Create pipeline
     print(f"\nInitializing pipeline with '{args.embedder}' embedder...")
     pipeline = IndexingPipeline(
         vocabulary_data=vocab_data,
         embedder_type=args.embedder
     )
+    
+    # Set embedder with custom dimensions if specified
+    if embedder_kwargs:
+        pipeline.set_embedder(args.embedder, **embedder_kwargs)
+    
+    # Report dimensions
+    if hasattr(pipeline.embedder, 'n_dimensions'):
+        print(f"Embedding dimensions: {pipeline.embedder.n_dimensions}")
+    elif hasattr(pipeline.embedder, 'n_features'):
+        print(f"Embedding dimensions: {pipeline.embedder.n_features}")
     
     total_stats = {
         "pdf": {"files_processed": 0, "chunks_created": 0, "files_failed": 0},
